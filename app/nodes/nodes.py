@@ -139,16 +139,18 @@ def generate_courses_recommandation(state: AgentState) -> AgentState:
     def build_roadmap(topics, fetch_fn):
         roadmaps = []
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {executor.submit(fetch_fn, topic): topic for topic in topics}
-            for i, future in enumerate(as_completed(futures)):
+            futures = [executor.submit(fetch_fn, topic) for topic in topics]
+            
+            for i, (topic, future) in enumerate(zip(topics, futures), 1):
                 topic_entry, courses = future.result()
-                print(f"📦 Step {i+1} done: {topic_entry} → {len(courses)} courses")
+                print(f"📦 Step {i} done: {topic_entry} → {len(courses)} courses")
                 roadmaps.append({
-                    "step": len(roadmaps) + 1,
+                    "step": i,
                     "topic": topic_entry,
                     "courses": courses
                 })
-        return generate_roadmap_output(roadmaps, topic)
+        
+        return generate_roadmap_output(roadmaps, topics)
 
     def get_general_recommendations(payload):
         print("➡️ Calling /recommend for general recommendation...")

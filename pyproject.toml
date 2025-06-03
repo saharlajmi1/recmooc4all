@@ -5,11 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "chromadb==1.0.12",
     "cryptography>=45.0.3",
     "dotenv>=0.9.9",
-    "fastapi>=0.115.12",
+    "fastapi[standard]==0.115.9",
     "gdown>=5.2.0",
     "langchain>=0.3.25",
+    "langchain-chroma>=0.2.4",
     "langchain-core>=0.3.63",
     "langchain-openai>=0.3.18",
     "langfuse>=2.60.7",
@@ -19,4 +21,5 @@ dependencies = [
     "sqlalchemy>=2.0.41",
     "torch>=2.7.0",
     "transformers>=4.52.4",
+    "uvicorn>=0.34.3",
 ]
