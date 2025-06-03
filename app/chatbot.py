@@ -1,11 +1,10 @@
 from app.workflow.workflow import create_workflow
 from app.database.database import Query
 from app.services.query_service import QueryServiceImpl
-from pprint import pprint
 from typing import Optional
-query_service = QueryServiceImpl()
-
 from langfuse.callback import CallbackHandler
+
+query_service = QueryServiceImpl()
 langfuse_handler = CallbackHandler(
     public_key="pk-lf-9fbe65cf-d6ae-4744-b0b0-e614661bbcb8",
     secret_key="sk-lf-10adbbf6-da4e-43b9-b72f-005270f29a62",

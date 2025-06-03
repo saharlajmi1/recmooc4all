@@ -2,7 +2,6 @@
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
-from langchain_ollama.llms import OllamaLLM
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 

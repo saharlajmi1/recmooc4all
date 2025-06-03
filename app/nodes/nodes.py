@@ -1,17 +1,10 @@
 from app.chains.chains import get_finale_answer_chain,get_roadmap_chain,get_classification_chain, get_rec_chain, get_assistant_chain, get_retriever_chain, get_feedback_chain, get_assistant_classification_chain,get_quiz_chain,get_language, get_prepare_tts_chain,get_generate_final_answer_chain_2
-from app.repositories.query_repo import create_query
 from app.models.agent_state import AgentState
 from app.vector_db.retrieve_courses import search_courses
 from app.vector_db.retrieve_FAQ import serach_response
-from decorator import log_execution
-import uuid
-import requests
+from app.utils.decorator import log_execution
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import requests
 from app.utils.utils import format_courses_list,generate_roadmap_output,detect_emotion,get_tone_from_emotion,render_quiz_to_pdf
-from sqlalchemy.orm import Session
-from app.database.recmooc_conn import RecSessionLocal
-from app.database.recmoocusers import recmoocUser  
 from app.services.user_service import UserServiceImpl
 from app.models.models import Classification
 from app.database.database import Query

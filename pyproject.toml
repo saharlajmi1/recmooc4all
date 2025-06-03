@@ -1,0 +1,22 @@
+[project]
+name = "recmooc4all"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=45.0.3",
+    "dotenv>=0.9.9",
+    "fastapi>=0.115.12",
+    "gdown>=5.2.0",
+    "langchain>=0.3.25",
+    "langchain-core>=0.3.63",
+    "langchain-openai>=0.3.18",
+    "langfuse>=2.60.7",
+    "langgraph>=0.4.8",
+    "pymysql>=1.1.1",
+    "reportlab>=4.4.1",
+    "sqlalchemy>=2.0.41",
+    "torch>=2.7.0",
+    "transformers>=4.52.4",
+]

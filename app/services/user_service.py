@@ -2,7 +2,6 @@
 This module implements the UserServiceImpl class, which provides services 
 for managing user entities such as creating, updating, retrieving, and deleting users.
 """
-from app.database.database import SessionLocal
 from fastapi import HTTPException
 from app.repositories.user_repo import (
     create_user,
@@ -12,8 +11,6 @@ from app.repositories.user_repo import (
     find_and_modify_user,
     create_anonymous_user
 )
-from sqlalchemy.orm import Session
-from app.database.database import User
 
 class UserServiceImpl:
     """Service class to handle User-related operations."""

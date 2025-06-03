@@ -1,15 +1,5 @@
-course_rec_venv/
 .env
-*test*.py
-*.mp3
-*.wav
-*.pdf
 
 __pycache__/
-decorator.py
-detect_gpu.py
-sentiment_detect.py
-
+.venv/
 vector_db/
-
-

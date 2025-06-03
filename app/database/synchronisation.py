@@ -2,7 +2,6 @@
 from sqlalchemy import event
 import uuid
 from app.database.agent_conn import SessionLocal
-from app.database.recmooc_conn import RecSessionLocal
 from app.database.database import User
 from app.database.recmoocusers import recmoocUser
 

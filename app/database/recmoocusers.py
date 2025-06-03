@@ -1,5 +1,4 @@
 from sqlalchemy import Column, String
-from app.database.recmooc_conn import RecSessionLocal
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import (
     Column, Integer, String, Enum, Boolean, TIMESTAMP
