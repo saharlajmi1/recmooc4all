@@ -399,10 +399,10 @@ def text_to_speech(state: AgentState) -> AgentState:
     """
     if state.get("final_answer"):
         language = state.get("language")
-        audio_path = generate_tts(state["final_answer"],language)
+        audio_path = generate_tts(state["tts_output"],language)
         return {
             **state,
-            "audio_output": audio_path
+            "audio_output": audio_path,
         }
 
 @log_execution

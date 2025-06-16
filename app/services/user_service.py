@@ -9,7 +9,8 @@ from app.repositories.user_repo import (
     list_users,
     get_user_by_uuid,
     find_and_modify_user,
-    create_anonymous_user
+    create_anonymous_user,
+    get_user_by_mail
 )
 
 class UserServiceImpl:
@@ -29,6 +30,16 @@ class UserServiceImpl:
         :return: User object or raise HTTP 404 if not found.
         """
         user = get_user_by_uuid(user_uuid)
+        if isinstance(user, dict) and "error" in user:
+            return None
+        return user
+    def get_user_by_mail(self, email: str):
+        """
+        Retrieve a user by email.
+        :param email: Email of the user.
+        :return: User object or raise HTTP 404 if not found.
+        """
+        user = get_user_by_mail(email)
         if isinstance(user, dict) and "error" in user:
             return None
         return user

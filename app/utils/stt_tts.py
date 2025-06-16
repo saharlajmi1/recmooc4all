@@ -46,7 +46,7 @@ def generate_tts(text: str, language: str, output_file: Optional[str] = None) ->
 
     # Set default output file if not provided
     if output_file is None:
-        output_file = f"speech_{language.lower()}.mp3"
+        output_file = f"speech.mp3"
 
     # Initialize Lemonfox client
     client = OpenAI(
@@ -56,8 +56,8 @@ def generate_tts(text: str, language: str, output_file: Optional[str] = None) ->
 
     # Map languages to voices (adjust as per Lemonfox API documentation)
     voice_map = {
-        'en': 'sarah',  # Known voice for English
-        'ja': 'sakura',  # Placeholder; replace with actual voice if known
+        'en': 'sarah', 
+        'ja': 'sakura',  
         'zh': 'xiaobei',
         'es': 'dora',
         'fr': 'siwis',

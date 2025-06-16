@@ -141,3 +141,16 @@ def delete_user(user_id: int) -> bool:
         else:
             print(f"❌ User with ID {user_id} not found.")
             return False
+
+def get_user_by_mail(email: str):
+    try:
+        session = SessionLocal()
+        user = session.query(User).filter_by(email=email).first()
+        if user:
+            return user
+        else:
+            return {"error": f"❌ No user found with email {email}"}
+    except Exception as e:
+        return {"error": f"❌ An error occurred: {str(e)}"}
+    finally:
+        session.close()

@@ -1,143 +1,119 @@
-
-from fastapi import APIRouter, FastAPI, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
 from app.schema.query_schema import UnifiedQuerySchema, QueryResponseSchema
 from app.services.query_service import QueryServiceImpl
 from app.services.conv_service import ConversationServiceImpl
 from app.services.user_service import UserServiceImpl
 from app.chatbot import recMooc4all
 from app.utils.utils import generate_title
-from app.database.synchronisation import setup_sync
 from app.utils.stt_tts import test_tts_lemonfox
 from typing import Optional
-import os
-import tempfile
-
-app = FastAPI()
-
-# Custom middleware to log all requests and responses
-class LoggingMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        print(f"Incoming request: {request.method} {request.url}")
-        response = await call_next(request)
-        print(f"Response status: {response.status_code}, Headers: {response.headers}")
-        return response
-
-app.add_middleware(LoggingMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Global exception handlers
-@app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request, exc):
-    print(f"HTTP exception occurred: {exc.detail}")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-        headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-    )
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc):
-    print(f"Validation error: {exc}")
-    return JSONResponse(
-        status_code=422,
-        content={"detail": str(exc)},
-        headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-    )
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    print(f"Unexpected error: {exc}")
-    import traceback
-    traceback.print_exc()
-    return JSONResponse(
-        status_code=500,
-        content={"detail": f"Internal Server Error: {str(exc)}"},
-        headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-    )
+import tempfile, os, logging
+from uuid import uuid4
+import re
+import json
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v2", tags=["RecMooc4All"])
+
 query_service = QueryServiceImpl()
 conversation_service = ConversationServiceImpl()
 user_service = UserServiceImpl()
 agent = recMooc4all()
+import ast
 
-@app.on_event("startup")
-async def startup_event():
+def parse_choices(choices_str):
+    """
+    Parse string representation of a list of choices safely.
+    Example: "list = [1, 2, 3]" or "['choice1', 'choice2']"
+    """
+    
     try:
-        setup_sync()
-        print("✅ Synchronisation des bases de données configurée")
-        print("Registered routes:", [route.path for route in app.routes])
+       
+        parsed = ast.literal_eval("[" + choices_str + "]") or ast.literal_eval("(" + choices_str + ")") or ast.literal_eval("{" + choices_str + "}")
+        
+        return [str(c).strip() for c in parsed]
     except Exception as e:
-        print(f"❌ Erreur lors de la configuration de la synchronisation : {e}")
-        raise e
+        
+        return [c.strip().strip("'\"") for c in choices_str.split(',')]
+
+
+
+
+def parse_quiz_string(quiz_string: str) -> dict:
+    question_pattern = r"Question\(question='(.*?)', choices=\[(.*?)\], correct_answer='(.*?)'\)"
+    matches = re.findall(question_pattern, quiz_string, re.DOTALL)
+    
+    questions = []
+    for question, choices_str, correct_answer in matches:
+        choices = parse_choices(choices_str)
+        questions.append({
+            "question": question,
+            "choices": choices,
+            "correct_answer": correct_answer
+        })
+    return {"questions": questions}
 
 async def process_query(query_text: str, user_id: str, conversation_id: Optional[str], audio_input: Optional[str] = None):
-    """Shared logic to process a query (text or transcribed audio)."""
     user = user_service.get_user_by_id(user_id)
     if not user:
-        user = user_service.create_anonymous_user(user_id)
-        print(f"✅ Utilisateur anonyme créé : {user.id}")
-    conversation = None
-    if conversation_id:
-        conversation = conversation_service.get_conversation(conversation_id)
-    if not conversation_id or not conversation:
+        user = user_service.create_anonymous_user(str(uuid4()))
+
+    conversation = conversation_service.get_conversation(conversation_id) if conversation_id else None
+    if not conversation:
         conversation_title = generate_title(query_text)
         conversation = conversation_service.create_conversation(conversation_title, user_id)
         conversation_id = conversation.id
-        print(f"✅ Nouvelle conversation créée : {conversation.id}")
 
-    query = query_service.create_query(
-        query=query_text,
-        response=None,
-        intent=None,
-        user_id=user_id,
-        conversation_id=conversation_id,
-    )
-    print("✅ Requête enregistrée")
-
-    # Pass the query object to agent.run instead of query_text
+    query = query_service.create_query(query=query_text, response=None, intent=None, user_id=user_id, conversation_id=conversation_id)
     result = agent.run(query, audio_input=audio_input)
-    print(f"✅ Réponse générée: {result}")
-    response = result.get("final_answer", "⚠️ Je ne peux pas trouver la réponse à votre question")
-    refined_query = result.get("refined_query", None)
-    title = level = num_courses = None
-    if "courses_metadatas" in result:
-        metadata = result["courses_metadatas"]
-        title = metadata.course_title_or_skill
-        level = metadata.level.value if hasattr(metadata.level, 'value') else metadata.level
-        num_courses = metadata.num_courses
-        user_service.update_user(
-            user_id,
-            {},
-            topic=title,
-            level=level
-        )
-    updated_query = query_service.update_query(
-        query.id,
-        {
-            "response": response,
-            "intent": result.get("classification"),
-            "refined_query": refined_query,
-            "topic": title,
-            "level": level,
-            "num_courses": num_courses
+
+    metadata = result.get("courses_metadatas")
+    title = getattr(metadata, 'course_title_or_skill', None) if metadata else None
+    level = getattr(metadata.level, 'value', None) if metadata and hasattr(metadata, 'level') else None
+    num_courses = getattr(metadata, 'num_courses', None) if metadata else None
+
+    # --------- Correction ici pour gérer string Quiz(...) ---------
+    
+    if result.get("classification") == "quiz":
+         quiz_raw = result.get("final_answer")
+         if isinstance(quiz_raw, str):
+            final_answer = parse_quiz_string(quiz_raw)
+         else:
+            final_answer = {
+            "questions": [
+                {
+                    "question": q.question,
+                    "choices":  q.choices,
+                    "correct_answer": q.correct_answer
+                } for q in quiz_raw.questions
+            ]
         }
-    )
-    print("✅ Requête mise à jour")
+    # ➔ On prépare aussi le champ `response` sous forme JSON (string propre)
+         response_to_store = json.dumps(final_answer)
+         
+    else:
+              final_answer = result.get("final_answer", "⚠️ Unable to find an answer")
+              response_to_store = final_answer if isinstance(final_answer, str) else json.dumps(final_answer)
+              
+
+ 
+    print("the resonse is",response_to_store)
+
+    user_service.update_user(user_id, {}, topic=title, level=level)
+
+    updated_query = query_service.update_query(query.id, {
+        "response": result.get("final_answer", "⚠️ Unable to find an answer"),
+        "intent": result.get("classification"),
+        "refined_query": result.get("refined_query"),
+        "topic": title,
+        "level": level,
+        "num_courses": num_courses
+    })
+
     return {
         "query": updated_query.query,
-        "response": updated_query.response,
+        "response": response_to_store,
         "intent": updated_query.intent,
         "conversation_id": updated_query.conversation_id,
         "user_id": updated_query.user_id,
@@ -145,248 +121,113 @@ async def process_query(query_text: str, user_id: str, conversation_id: Optional
         "topic": updated_query.topic,
         "level": updated_query.level,
         "num_courses": updated_query.num_courses,
-        "audio_output": result.get("audio_output")  # Include audio_output if present
+        "audio_output": result.get("audio_output"),
+        "final_answer": final_answer  # ajoute ici si besoin dans la réponse JSON
     }
-@router.options("/query")
-async def options_query():
-    print("Handling OPTIONS for /query")
-    return JSONResponse(
-        status_code=200,
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "http://localhost:5173",
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "*"
-        }
-    )
+# ---------------- Routes ------------------
+
+
 
 @router.post("/query", response_model=QueryResponseSchema)
-async def unified_query_endpoint(input_data: UnifiedQuerySchema = Depends()):
-    print(f"Processing unified query for user_id: {input_data.user_id}")
+async def unified_query_endpoint(
+    query: Optional[str] = Form(None),
+    user_id: str = Form(...),
+    conversation_id: Optional[str] = Form(None),
+    audio_file: Optional[UploadFile] = File(None)
+):
     temp_file_path = None
     try:
-        query_text = input_data.query
-        if input_data.audio_file:
+        logger.info(f"Extracted: query_text={query}, user_id={user_id}, conversation_id={conversation_id}, audio_file={audio_file}")
+
+        if audio_file:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
-                content = await input_data.audio_file.read()
+                content = await audio_file.read()
                 temp_file.write(content)
                 temp_file_path = temp_file.name
 
             transcription = test_tts_lemonfox(temp_file_path)
-            query_text = transcription.text if hasattr(transcription, 'text') else str(transcription)
-            print(f"Transcribed query: {query_text}")
+            query = transcription.text if hasattr(transcription, 'text') else str(transcription)
 
-            if not query_text:
-                raise HTTPException(
-                    status_code=400,
-                    detail="No valid query provided (audio transcription failed)",
-                    headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-                )
+            if not query:
+                raise HTTPException(status_code=400, detail="No valid query provided (audio transcription failed)")
 
-        if not query_text:
-            raise HTTPException(
-                status_code=400,
-                detail="Query text is required",
-                headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-            )
+        if not query:
+            raise HTTPException(status_code=400, detail="Query text is required")
 
-        result = await process_query(
-            query_text=query_text,
-            user_id=input_data.user_id,
-            conversation_id=input_data.conversation_id,
-            audio_input=temp_file_path
-        )
+        result = await process_query(query, user_id, conversation_id, audio_input=temp_file_path)
 
-        # Check for audio_output in the result
-        audio_output = result.get("audio_output")
-        if audio_output and os.path.exists(audio_output):
-            return FileResponse(
-                audio_output,
-                media_type="audio/mp3",
-                headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-            )
-        return JSONResponse(
-            content=result,
-            headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-        )
-    except Exception as e:
-        print(f"❌ Error in /query endpoint: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal Server Error: {str(e)}",
-            headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-        )
+        if result.get("audio_output") and os.path.exists(result["audio_output"]):
+            return FileResponse(result["audio_output"], media_type="audio/mp3")
+
+        return JSONResponse(content=result)
+
     finally:
-        # Move file deletion here, after process_query
         if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.unlink(temp_file_path)
-                print(f"Deleted temporary file: {temp_file_path}")
-            except Exception as e:
-                print(f"Failed to delete temporary file {temp_file_path}: {e}")
+            os.unlink(temp_file_path)
+
+
+@router.post("/login")
+async def login_endpoint(email: str = Form(...)):
+    user = user_service.get_user_by_mail(email)
+    if not user :  
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+    return JSONResponse(content={"user_id": user.id})
+
+@router.post("/guest")
+async def guest_login():
+    user_id = str(uuid4())
+    user_service.create_anonymous_user(user_id)
+    return JSONResponse(content={"user_id": user_id})
+
 @router.get("/conversations/{user_id}")
 def get_user_conversations(user_id: str):
-    print(f"Fetching conversations for user_id: {user_id}")
-    try:
-        conversations = conversation_service.get_conversations_by_user(user_id)
-        result = [
-            {
-                "user_id": conv.user_id,
-                "title": conv.title,
-                "id": conv.id,
-                "is_archived": conv.is_archived
-            }
-            for conv in conversations
-        ]
-        return JSONResponse(
-            content=result,
-            headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-        )
-    except Exception as e:
-        print(f"Error fetching conversations: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Server Error",
-            headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-        )
+    conversations = conversation_service.get_conversations_by_user(user_id)
+    return [
+        {"user_id": conv.user_id, "title": conv.title, "id": conv.id, "is_archived": conv.is_archived}
+        for conv in conversations
+    ]
 
-@router.options("/conversations/{user_id}")
-async def options_conversations():
-    print("Handling OPTIONS for /conversations/{user_id}")
-    return JSONResponse(
-        status_code=200,
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "http://localhost:5173",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "*"
-        }
-    )
 
 @router.get("/conversations/queries/{conversation_id}")
 def get_conversation_queries(conversation_id: str):
-    print(f"Fetching queries for conversation_id: {conversation_id}")
-    try:
-        queries = query_service.get_queries_by_conversation(conversation_id)
-        result = [
-            {
-                "query": q.query,
-                "response": q.response,
-                "intent": q.intent,
-                "timestamp": q.timestamp.isoformat(),
-                "refined_query": q.refined_query,
-                "topic": q.topic,
-                "level": q.level,
-                "num_courses": q.num_courses
-            }
-            for q in queries
-        ]
-        return JSONResponse(
-            content=result,
-            headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-        )
-    except HTTPException as e:
-        print(f"HTTPException in get_conversation_queries: {e.detail}")
-        raise e
-    except Exception as e:
-        print(f"Error fetching queries for conversation {conversation_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Server Error",
-            headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-        )
-
-@router.options("/deleteConversation/{conversation_id}")
-async def options_delete_conversation():
-    print("Handling OPTIONS for /deleteConversation/{conversation_id}")
-    return JSONResponse(
-        status_code=200,
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "http://localhost:5173",
-            "Access-Control-Allow-Methods": "DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+    queries = query_service.get_queries_by_conversation(conversation_id)
+    return [
+        {
+            "query": q.query,
+            "response": q.response,
+            "intent": q.intent,
+            "timestamp": q.timestamp.isoformat(),
+            "refined_query": q.refined_query,
+            "topic": q.topic,
+            "level": q.level,
+            "num_courses": q.num_courses
         }
-    )
+        for q in queries
+    ]
+
 
 @router.delete("/deleteConversation/{conversation_id}")
 def delete_conversation(conversation_id: str, user_id: str):
-    print(f"Received DELETE request for conversation_id: {conversation_id}, user_id: {user_id}")
-    try:
-        conversation = conversation_service.get_conversation(conversation_id)
-        print(f"Conversation found: {conversation.id if conversation else None}")
-        if not conversation:
-            raise HTTPException(
-                status_code=404,
-                detail="Conversation not found",
-                headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-            )
-        if conversation.user_id != user_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Unauthorized: User does not own this conversation",
-                headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-            )
-        conversation_service.delete_conversation(conversation_id)
-        print(f"Conversation {conversation_id} deleted successfully")
-        return JSONResponse(
-            content={"message": "Conversation deleted successfully"},
-            status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": "http://localhost:5173",
-                "Access-Control-Allow-Methods": "DELETE, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization"
-            }
-        )
-    except HTTPException as e:
-        print(f"HTTPException in delete_conversation: {e.detail}")
-        raise e
-    except Exception as e:
-        print(f"Error deleting conversation {conversation_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Server Error",
-            headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-        )
+    conversation = conversation_service.get_conversation(conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if conversation.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Unauthorized: User does not own this conversation")
+    conversation_service.delete_conversation(conversation_id)
+    return {"message": "Conversation deleted successfully"}
+
 
 @router.get("/quiz/pdf")
 def get_quiz_pdf():
-    print("Fetching quiz PDF")
-    try:
-        import os
-        pdf_path = "quiz_output.pdf"
-        if not os.path.exists(pdf_path):
-            raise HTTPException(
-                status_code=404,
-                detail="Quiz PDF not found",
-                headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-            )
-        return FileResponse(
-            pdf_path,
-            media_type="application/pdf",
-            headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-        )
-    except Exception as e:
-        print(f"Error fetching quiz PDF: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal Server Error",
-            headers={"Access-Control-Allow-Origin": "http://localhost:5173"}
-        )
+    pdf_path = "quiz_output.pdf"
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=404, detail="Quiz PDF not found")
+    return FileResponse(pdf_path, media_type="application/pdf")
 
-@router.options("/quiz/pdf")
-async def options_quiz_pdf():
-    print("Handling OPTIONS for /quiz/pdf")
-    return JSONResponse(
-        status_code=200,
-        content={},
-        headers={
-            "Access-Control-Allow-Origin": "http://localhost:5173",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "*"
-        }
-    )
 
-app.include_router(router)
+@router.get("/audio")
+def get_audio():
+    audio_path = "speech.mp3"
+    if not os.path.exists(audio_path):
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    return FileResponse(audio_path, media_type="audio/mp3")    
