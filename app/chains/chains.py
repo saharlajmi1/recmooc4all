@@ -1,6 +1,6 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser,JsonOutputParser
-from app.models.models import llm_json_mode, UserIntent, RecommendationRequest, Type_assistance ,Quiz
+from app.models.models import llm_json_mode, UserIntent, RecommendationRequest, Type_assistance ,Quiz,EvaluationScores
 from app.prompts.prompt import (
     classification_few_shot_prompt_examples,
     feedback_prompt_template2,
@@ -13,17 +13,20 @@ from app.prompts.prompt import (
     quiz_template,
     language_detection_prompt_template,
     prepare_tts_prompt_template,
-    generate_final_answer_prompt_template2
+    generate_final_answer_prompt_template2,
+    suggestion_resquest_prompt,
+    quiz_level_extraction_prompt_template,
+    gnerate_finale_answer_prompt_template,
+    judge_template
+    
     
 )
-
-
 # Define structured output parsers for different model outputs
 llm_intent = llm_json_mode.with_structured_output(UserIntent)
 llm_rec = llm_json_mode.with_structured_output(RecommendationRequest)
 llm_assistance = llm_json_mode.with_structured_output(Type_assistance)
 llm_quiz = llm_json_mode.with_structured_output(Quiz)
-
+llm_eval=llm_json_mode.with_structured_output(EvaluationScores)
 
 def get_classification_chain():
     """
@@ -140,23 +143,30 @@ def get_finale_answer_chain():
     finale_answer_prompt = ChatPromptTemplate.from_messages(
         [
             (
-                "system",
-                """You are a helpful and emotionally intelligent assistant.
-
-You will be given an  the user initial query , response and a target tone. 
-Your task is to rephrase  response **in the same meaning**, but using the **specified tone** and the initial query.
-
-Tone: {ton}
-initial query: {query}
-""",
-            ),
+                "system", gnerate_finale_answer_prompt_template),
            
-            ("user", "{final_answer}")
+            ("user", "{final_answer}"),
+            ("user", "{language}"),
+            ("user", "{ton}"),
+            ("user", "{query}"),
+
         ]
     )
 
     finale_answer_chain = finale_answer_prompt | llm_json_mode | StrOutputParser()
     return finale_answer_chain
+
+def get_level_extraction_chain():
+    """
+    Returns a chain that extracts the level of expertise from the user's query.
+    Output is structured as a string representing the level.
+    """
+    level_extraction_prompt = ChatPromptTemplate.from_messages([
+        ("system", quiz_level_extraction_prompt_template ),
+        ("user", "{query}")
+    ])
+    level_extraction_chain = level_extraction_prompt | llm_json_mode | StrOutputParser()
+    return level_extraction_chain
 
 def get_quiz_chain():
     quiz_prompt = ChatPromptTemplate.from_messages([
@@ -186,3 +196,32 @@ def get_generate_final_answer_chain_2():
     ])
     generate_final_answer_chain = generate_final_answer_prompt | llm_json_mode | StrOutputParser()
     return generate_final_answer_chain
+
+def get_suggestion_request_chain():
+    suggestion_request_prompt = ChatPromptTemplate.from_messages([
+        ("system", suggestion_resquest_prompt),
+        ("user", "{field_of_study}"),
+        ("user", "{areas_of_interest}"),
+        ("user", "{preferred_learning_style}"),
+        ("user", "{knowledge_level}"),
+        ("user", "{recent_queries}"),
+    ])
+    suggestion_request_chain = suggestion_request_prompt | llm_json_mode | StrOutputParser()
+    return suggestion_request_chain
+
+
+def get_llm_eval_chain():
+    """
+    Returns a chain that evaluates the final answer based on clarity, adaptability, relevance, language adequacy, and comment.
+    Output is structured as EvaluationScores.
+    """
+    judge_prompt = ChatPromptTemplate.from_messages([
+        ("system", judge_template),
+        MessagesPlaceholder(variable_name="chat_history", optional=True),
+        ("user", "{requete}"),
+        ("user", "{reponse}"),
+        ("user", "{langue}")
+    ])
+    
+    judge_chain = judge_prompt | llm_eval
+    return judge_chain

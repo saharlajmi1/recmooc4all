@@ -1,4 +1,4 @@
-from app.chains.chains import get_finale_answer_chain,get_roadmap_chain,get_classification_chain, get_rec_chain, get_assistant_chain, get_retriever_chain, get_feedback_chain, get_assistant_classification_chain,get_quiz_chain,get_language, get_prepare_tts_chain,get_generate_final_answer_chain_2
+from app.chains.chains import get_finale_answer_chain,get_roadmap_chain,get_classification_chain, get_rec_chain, get_assistant_chain, get_retriever_chain, get_feedback_chain, get_assistant_classification_chain,get_quiz_chain,get_language, get_prepare_tts_chain,get_generate_final_answer_chain_2,get_suggestion_request_chain,get_level_extraction_chain,get_finale_answer_chain,get_llm_eval_chain
 from app.models.agent_state import AgentState
 from app.vector_db.retrieve_courses import search_courses
 from app.vector_db.retrieve_FAQ import serach_response
@@ -9,6 +9,7 @@ from app.services.user_service import UserServiceImpl
 from app.models.models import Classification
 from app.database.database import Query
 from app.utils.stt_tts import test_tts_lemonfox,generate_tts
+from sqlalchemy import asc,desc
 
 
 @log_execution
@@ -323,12 +324,26 @@ def get_final_answer(state: AgentState) -> AgentState:
 
     """
     ton=get_tone_from_emotion(state["emotion"])
+    language= state["language"]
     answer = state["final_answer"]
     print(f"🧠 Final answer: {answer}")
-    final_answer = get_finale_answer_chain().invoke({"final_answer": answer, "ton":ton, "query": state["query"]})
+    final_answer = get_finale_answer_chain().invoke({"final_answer": answer, "ton":ton, "query": state["query"], "language": language})
     return {
         **state,
         "final_answer": final_answer
+    }
+
+@log_execution
+def get_quiz_level(state: AgentState) -> AgentState:
+    """
+    Extract the level of expertise from the user's query.
+    Uses a dedicated level extraction chain.
+    """
+    level = get_level_extraction_chain().invoke({"query": state["query"]})
+    print(f"🧠 Level extracted: {level}")
+    return {
+        **state,
+        "level": level  
     }
 
 @log_execution
@@ -336,24 +351,23 @@ def generate_quiz(state: AgentState) -> AgentState:
     from app.database.agent_conn import SessionLocal
     from app.database.database import Query
     from sqlalchemy import asc
-   
-
-    conversation_id = state["conversation_uuid"]
-    with SessionLocal() as db_session:
-        last_intent_query = db_session.query(Query).filter(
-            Query.conversation_id == conversation_id,
-            Query.intent.in_(["recommendation", "roadmap"]),
-            Query.is_deleted == False
-        ).order_by(asc(Query.timestamp)).first()
-
-
-    if last_intent_query and last_intent_query.level:
-        level = last_intent_query.level
-    else:
-        level = "Débutant"
+    level = state.get("level")
+    print("🧠 Current level in state:", level)
+    if level=="None":
+        # Retrieve the last Query object with intent quiz, recommendation, or roadmap
+        conversation_id = state["conversation_uuid"]
+        with SessionLocal() as db_session:
+            last_relevant_query = db_session.query(Query).filter(
+                Query.conversation_id == conversation_id,
+                Query.intent.in_(["quiz", "recommendation", "roadmap"]),
+                Query.is_deleted == False
+            ).order_by(asc(Query.timestamp)).first()
+        
+        level = last_relevant_query.level if last_relevant_query else "beginner"
+    
 
     print(f"🧠 Level: {level}")
-
+    
     num_questions = 6
     quiz = get_quiz_chain().invoke({
         "num_question": num_questions,
@@ -369,7 +383,8 @@ def generate_quiz(state: AgentState) -> AgentState:
 
     return {
         **state,
-        "final_answer": quiz
+        "final_answer": quiz,
+        "level": level
     }
    
 @log_execution
@@ -427,9 +442,86 @@ def get_final_answer_2(state: AgentState) -> AgentState:
     Finalize the answer to the user query using a different chain.
     This is a placeholder function that can be extended in the future.
     """
-    
     final_answer = get_generate_final_answer_chain_2().invoke({"final_answer": state["final_answer"], "language":state["language"]})
     return {
         **state,
         "final_answer": final_answer
     }
+
+@log_execution
+def get_suggestion_request(field_of_study: str,areas_of_interest: str,preferred_learning_style:str,knowledge_level:str,recent_queries: str) :
+    suggestion_request_chain = get_suggestion_request_chain().invoke({
+        "field_of_study": field_of_study,
+        "areas_of_interest": areas_of_interest,
+        "preferred_learning_style": preferred_learning_style,
+        "knowledge_level": knowledge_level,
+        "recent_queries": recent_queries
+    })
+    return suggestion_request_chain
+log_execution
+def generate_quiz_level_recommendation(score_percentage: float, user_id: str, conversation_id: str) -> dict:
+    """
+    Generates a recommendation based on the quiz score percentage and the level of the last query.
+    Returns a recommendation message and the recommended level.
+    """
+    from app.database.agent_conn import SessionLocal
+    from app.database.database import Query
+    from sqlalchemy import desc
+
+    # Retrieve the latest query with intent quiz, recommendation, or roadmap
+    with SessionLocal() as db_session:
+        last_relevant_query = db_session.query(Query).filter(
+            Query.conversation_id == conversation_id,
+            Query.intent.in_(["quiz", "recommendation", "roadmap"]),
+            Query.is_deleted == False
+        ).order_by(asc(Query.timestamp)).first()
+
+    print(last_relevant_query)
+    current_level = last_relevant_query.level
+    print(f"🧠 Current level: {current_level}, Score: {score_percentage}%")
+
+    level_hierarchy = ["beginner", "intermediate", "advanced"]
+    current_level_index = level_hierarchy.index(current_level) if current_level in level_hierarchy else 0
+
+    if score_percentage >= 80:
+        # Recommend moving to the next level if possible
+        if current_level_index < len(level_hierarchy) - 1:
+            new_level = level_hierarchy[current_level_index + 1]
+            recommendation = f"Excellent work! With a score of {score_percentage:.2f}%, you demonstrate strong mastery. We recommend advancing to the {new_level} level."
+        else:
+            new_level = current_level
+            recommendation = f"Congratulations! Your score of {score_percentage:.2f}% is outstanding. You’ve reached the top of the {current_level} level. Keep exploring advanced topics!"
+    elif score_percentage >= 50:
+        # Recommend staying at the current level
+        new_level = current_level
+        recommendation = f"Good effort! Your score of {score_percentage:.2f}% shows that you’re comfortable at the {current_level} level. Keep practicing to solidify your knowledge."
+    else:
+        # Recommend reviewing the previous level if possible
+        if current_level_index > 0:
+            new_level = level_hierarchy[current_level_index - 1]
+            recommendation = f"Your score of {score_percentage:.2f}% suggests that a review would be helpful. We recommend revisiting the {new_level} level to strengthen your foundations."
+        else:
+            new_level = current_level
+            recommendation = f"Your score of {score_percentage:.2f}% indicates that additional practice at the {current_level} level is needed. Keep going!"
+
+    print(f"🧠 Recommendation: {recommendation}, New level: {new_level}")
+    return {
+        "recommendation": recommendation,
+        "level": new_level
+    }
+
+def get_llm_eval(state: AgentState) -> AgentState:
+    """
+    Evaluate the final answer using a dedicated evaluation chain.
+    Adds the evaluation scores to the agent state.
+    """
+    evaluation = get_llm_eval_chain().invoke({
+        "requete": state["query"],
+        "reponse": state["final_answer"],
+        "langue": state["language"]
+    })
+    print(f"🧠 Evaluation: {evaluation}")
+    
+    # Add evaluation to the state
+    state['evaluation'] = evaluation
+    return state

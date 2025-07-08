@@ -35,8 +35,8 @@ def generate_roadmap_output(roadmap_steps, topic) -> str:
         courses = step["courses"]
 
         # Add step header
-        output.append(f"Step {step_number}: {step_topic}")
-        output.append("Courses:")
+        output.append(f"#Step {step_number}: {step_topic}")
+        output.append("--Courses:")
 
         # Format each course
         for course in courses:
@@ -53,7 +53,7 @@ def generate_roadmap_output(roadmap_steps, topic) -> str:
             if headline:
                 keywords = [k.strip() for k in headline.split(",") if k.strip()]
                 if keywords:
-                    description_lines.append("    - description:")
+                    description_lines.append("**description:**")
                     for keyword in keywords:
                         description_lines.append(f"      - {keyword}")
                 else:
@@ -63,10 +63,10 @@ def generate_roadmap_output(roadmap_steps, topic) -> str:
 
             # Format course details
             course_details = [
-                f"  - {course.get('Title', 'Titre inconnu')}",
-                f"    - category: {', '.join(categories) if categories else ''}",
-                f"    - level: {', '.join(levels) if levels else ''}",
-                f"    - URL: {course.get('URL', '')}"
+                f"  - **{course.get('Title', 'Titre inconnu')}**",
+                f"    **category:** {', '.join(categories) if categories else ''}",
+                f"    ** level:** {', '.join(levels) if levels else ''}",
+                f"    **URL** {course.get('URL', '')}"
             ] + description_lines
 
             output.extend(course_details)

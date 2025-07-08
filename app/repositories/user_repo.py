@@ -1,5 +1,8 @@
 # crud.py
-from app.database.database import User
+from app.database.database import User,Query
+
+from sqlalchemy import desc
+
 from app.database.agent_conn import SessionLocal
 from app.database.recmooc_conn import RecSessionLocal
 from app.database.recmoocusers import recmoocUser
@@ -152,5 +155,30 @@ def get_user_by_mail(email: str):
             return {"error": f"❌ No user found with email {email}"}
     except Exception as e:
         return {"error": f"❌ An error occurred: {str(e)}"}
+    finally:
+        session.close()
+
+
+def get_user_data_for_prompt(user_id: str):
+    session = SessionLocal()
+
+    try:
+        user = session.query(User).filter(User.id == user_id).first()
+        if not user:
+            return None, ""
+
+        recent_queries = session.query(Query).filter(
+            Query.user_id == user_id,
+            Query.is_deleted == False
+        ).order_by(desc(Query.timestamp)).limit(5).all()
+
+        recent_queries_str = "\n".join([f"- {q.query}" for q in recent_queries]) or ""
+
+        return user, recent_queries_str
+
+    except Exception as e:
+        print(f"❌ Error fetching user data for prompt: {e}")
+        return None, ""
+
     finally:
         session.close()

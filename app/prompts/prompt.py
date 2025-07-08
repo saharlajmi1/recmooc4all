@@ -255,15 +255,24 @@ Refined Query:
 """
 
 
-gnerate_finale_answer_prompt_template = """
-You are an intelligent conversational assistant.
+gnerate_finale_answer_prompt_template ="""
+You are an intelligent and context-aware conversational assistant.
 
-Given the following response:
-{final_answer}
+Given the following elements:
+- User Query: {query}
+- Initial Response: {final_answer}
 
-Rephrase it using the tone: "{ton}", while keeping the original meaning and information intact.
-Do not change the content or facts — only adjust the wording to reflect the specified tone.
+Your task is to rephrase the response based on the user demand , problem and prefrences  on his {query} specify if the user has specaial needs and using the tone: "{ton}", while strictly preserving:
+- The original structure and format of {final_answer}
+- The factual accuracy and content
+
+Additional requirements:
+- the outpout must be translated to this {language}
+- Only adjust the wording and style to reflect the specified tone and the specific need of the user; 
+
+Return only the rephrased {final_answer}, keeping its format exactly as is.
 """
+
 
 generate_final_answer_prompt_template2 ="""Your task is to return the  
  exactly as it is, without changing its structure, formatting, or content in any way.
@@ -278,6 +287,9 @@ quiz_template="""
     you will be given the user query and chat history.
     Your task is to generate a {level} multiple-choice quiz question  with {num_question}  based on the user's request and his history 
        """
+quiz_level_extraction_prompt_template = """
+Extract the level of the quiz question from the user query. The level can be one of the following: beginner, intermediate, or advanced. If the level is not explicitly mentioned, return None.
+"""
 
 language_detection_prompt_template=""" 
  you will be given the user query , detect the language  and return it as a code
@@ -299,4 +311,52 @@ Follow these rules:
 
 Return only the cleaned, fluent spoken version, ready for TTS.
 return it with the language {language}
+"""
+
+suggestion_resquest_prompt = """
+You are a personalized educational assistant.
+
+User profile:
+Field: {field_of_study}
+Interests: {areas_of_interest}
+Learning style: {preferred_learning_style}
+Knowledge level: {knowledge_level}
+Last 5 queries:
+{recent_queries}
+
+Generate 5 relevant, simple, short and  concise suggestions. Suggestions can be one of the following types:
+- Course recommendation
+- Learning roadmap
+- Custom quiz
+- Concept assistance
+
+Example:
+- "Recommend a beginner-level finance course."
+- "Create a roadmap to learn devops."
+-"how to create an account"
+
+Respond as list  only with the suggestions, without extra explanations or summaries.
+"""
+judge_template = """
+Tu es un évaluateur expert et impartial.
+Voici la requête utilisateur : "{requete}"
+Voici la réponse générée : "{reponse}"
+Langue détectée : "{langue}"
+
+Donne une note de 1 à 5 pour :
+- clarity : clarté et compréhension
+- adaptability : adaptation à l'intention de la requête
+- relevance : pertinence et utilité
+- language_adequacy : respect et fluidité dans la langue détectée
+
+Ajoute aussi un petit commentaire général.
+
+Réponds seulement sous ce format JSON :
+{{
+  "clarity": int,
+  "adaptability": int,
+  "relevance": int,
+  "language_adequacy": int,
+  "comment": "string"
+}}
 """

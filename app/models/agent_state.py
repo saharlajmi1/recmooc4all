@@ -20,4 +20,6 @@ class AgentState(TypedDict):
     is_audio_input: bool
     language: str
     tts_output: Optional[str]
+    level: Optional[str]
+    evaluation: Optional[dict]  # Evaluation scores from the judge
  

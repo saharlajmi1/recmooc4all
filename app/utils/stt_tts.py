@@ -21,8 +21,8 @@ def test_tts_lemonfox(audio_file: str):
                 file=audio,
                 language="fr"
             )
-
-        # Validate transcription
+            
+            # Validate transcription
         if not hasattr(transcript, 'text') or not transcript.text.strip():
             raise ValueError("Transcription failed: empty or invalid text")
 

@@ -36,7 +36,7 @@ def create_app() -> FastAPI:
     # Routes
     app.include_router(router)
 
-    # Startup events
+    # Startup events"
     @app.on_event("startup")
     async def startup_event():
         try:

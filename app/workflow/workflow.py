@@ -16,7 +16,9 @@ from app.nodes.nodes import (
     text_to_speech,
     detect_language,
     get_prepare_tts,
-    get_final_answer_2
+    get_final_answer_2,
+    get_quiz_level,
+    get_llm_eval
 )
 from app.models.agent_state import AgentState
 from app.models.models import Classification, AssistantClassification
@@ -52,7 +54,8 @@ def classification_router(state: AgentState):
         Classification.feedback: "provide_feedback",
         Classification.platform_assistant: "platform_assistant",
         Classification.roadmap: "roadmap_generation",
-        Classification.quiz: "generate_quiz"
+        Classification.quiz: "get_quiz_level"
+
     }
 
     return classification_map.get(classification, "generate_final_answer")
@@ -87,6 +90,7 @@ def create_workflow():
     workflow.add_node("speech_to_text", speech_to_text)
     workflow.add_node("detect_emotion", get_sentiment)
     workflow.add_node("detect_language", detect_language)
+    workflow.add_node("get_quiz_level", get_quiz_level)
     workflow.add_node("generate_quiz", generate_quiz)
     workflow.add_node("classify_query", classify)
     workflow.add_node("classification_router", classification_router)
@@ -98,14 +102,17 @@ def create_workflow():
     workflow.add_node("assistant_classification", classify_assistant)
     workflow.add_node("unhandled_assistance", unhandled_assistance)
     workflow.add_node("roadmap_generation", roadmap_generation)
-    workflow.add_node("generate_final_answer", get_final_answer_2) 
+    #workflow.add_node("generate_final_answer", get_final_answer_2)
+    workflow.add_node("generate_final_answer", get_final_answer)
     workflow.add_node("prepare_tts", get_prepare_tts)
     workflow.add_node("text_to_speech", text_to_speech)
+    workflow.add_node("get_llm_eval", get_llm_eval)
     
     # Conditional edges for initial routing
     workflow.add_conditional_edges(
         "detect_language",
         initial_router,
+         
         {
             "speech_to_text": "speech_to_text",
             "detect_emotion": "detect_emotion"
@@ -131,7 +138,7 @@ def create_workflow():
             "provide_feedback": "provide_feedback",
             "platform_assistant": "platform_assistant",
             "roadmap_generation": "roadmap_generation",
-            "generate_quiz": "generate_quiz"
+            "get_quiz_level": "get_quiz_level"
         }
     )
     
@@ -150,8 +157,7 @@ def create_workflow():
         "provide_assistance",
         "unhandled_assistance",
         "platform_assistant",
-        "generate_courses_recommandation",
-        "generate_quiz"
+        "generate_courses_recommandation"
     ]
     
     for node in nodes_with_output:
@@ -167,15 +173,16 @@ def create_workflow():
     # Main workflow edges
     workflow.add_edge(START, "detect_language")
     workflow.add_edge("detect_emotion", "classify_query")
+    workflow.add_edge("get_quiz_level", "generate_quiz")
     workflow.add_edge("roadmap_generation", "generate_courses_metadatas")
     workflow.add_edge("generate_courses_metadatas", "generate_courses_recommandation")
     workflow.add_edge("provide_feedback", "classify_query")
     workflow.add_edge("prepare_tts", "text_to_speech")
-    workflow.add_edge("text_to_speech", END)
-    workflow.add_edge("generate_final_answer", END)
-    
-    
-    
+    workflow.add_edge("generate_quiz","get_llm_eval")
+    workflow.add_edge("text_to_speech",END)
+    workflow.add_edge("generate_final_answer", "get_llm_eval")
+    workflow.add_edge("get_llm_eval", END)
     app = workflow.compile()
+    
     
     return app

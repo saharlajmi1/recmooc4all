@@ -114,3 +114,11 @@ class Question(BaseModel):
 
 class Quiz(BaseModel):
      questions: list[Question] = Field(description="List of quiz questions")
+
+
+class EvaluationScores(BaseModel):
+    clarity: int = Field(..., ge=1, le=5)
+    adaptability: int = Field(..., ge=1, le=5)
+    relevance: int = Field(..., ge=1, le=5)
+    language_adequacy: int = Field(..., ge=1, le=5)
+    comment: str
